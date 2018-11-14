@@ -12,6 +12,11 @@ void kv_block__init_empty(struct kv_block *bv_block)
 
 void kv_block__init(struct kv_block *bv_block, uint64_t key_id, uint32_t data_bytes, const char *value_data, uint64_t sequence)
 {
+	mock().actualCall("kv_block__init").
+			withUnsignedLongIntParameter("key_id", (unsigned long int)key_id).
+			withParameter("data_bytes", data_bytes).
+			withParameter("value_data", value_data).
+			withUnsignedLongIntParameter("sequence", (unsigned long int)sequence);
 }
 
 bool kv_block__is_allocated(const struct kv_block *kv_block)
