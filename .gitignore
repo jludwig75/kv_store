@@ -1,0 +1,5 @@
+*.o
+*_unittest
+*.a
+kv_harness
+kv_stress
