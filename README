@@ -1,0 +1,13 @@
+For an explanation of the code see kv_store_doc.pdf.
+
+To build the KV store test utilities:
+    make
+
+To run the KV store test utilities:
+    make test
+
+To make and run the code unit tests:
+    make unittest
+
+To make and run all tests:
+    make test_all

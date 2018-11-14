@@ -1,0 +1,53 @@
+@startuml
+
+
+
+
+class kvstor {
+	// Simple key-value store
+	set(k, v)
+    get(k, v)
+    del(k)
+}
+
+class kv_directory {
+	// In-memory directory to track
+    // data for valid key blocks
+	store_entry(k, key_data)
+    key_data lookup_entry(k)
+    remove_entry(k)
+}
+
+kvstor --> kv_directory : store, lookup, remove key data
+
+class kv_append_point {
+	// Keeps track of an always
+    //  increasing append point into the log
+	get_append_point()
+    update_append_point() // for log replay
+}
+
+kvstor --> kv_append_point : get, update append point
+
+class kv_block_allocator {
+	// bitmap to track valid
+    // blocks in the log
+	block find_next_free()
+    mark_allocated(block)
+    mark_free(block)
+}
+
+kvstor --> kv_block_allocator : mark_allocated, mark_free
+kv_append_point --> kv_block_allocator : find_next_free
+
+class kv_block_array {
+	// Provides abstraction for file
+    // as an array of fix-sized blocks
+	get_block_count() // for replay
+    read_block()
+    write_block()
+}
+
+kvstor --> kv_block_array: read, write, get block count
+
+@enduml
