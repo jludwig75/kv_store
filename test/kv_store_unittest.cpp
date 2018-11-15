@@ -1,9 +1,6 @@
 #include "CppUTest/TestHarness.h"
 #include "CppUTest/CommandLineTestRunner.h"
 #include "CppUTestExt/MockSupport.h"
-#include "opmock.h"
-
-#include "kv_append_point_stub.h"
 
 extern "C" {
 #include "kv_store.h"
@@ -37,7 +34,7 @@ TEST_GROUP(kv_open)
     {
         mock().checkExpectations();
         mock().clear();
-		OP_VERIFY();
+		//OP_VERIFY();
     }
 };
 
@@ -102,13 +99,13 @@ TEST_GROUP(kv_set)
 			withBoolParameter("create", true).
 			andReturnValue(0);
 
-		kv_append_point__init_IgnoreAndReturn(0);
+		//kv_append_point__init_IgnoreAndReturn(0);
 
 		CHECK_EQUAL(0, kv_open(&store, true, 2, argv));
     }
 	void teardown()
     {
-		kv_append_point__cleanup_IgnoreAndReturn();
+		//kv_append_point__cleanup_IgnoreAndReturn();
 		kv_close(store);
 
         mock().checkExpectations();
@@ -131,7 +128,8 @@ TEST(kv_set, initializes_kv_block)
 			withParameter("value_data", v1.value.data).
 			withUnsignedLongIntParameter("sequence", 1);
 
-	kv_append_point__get_append_point_ExpectAndReturn(NULL, UINT32_MAX, NULL);
+	//kv_append_point__get_append_point_ExpectAndReturn(NULL, UINT32_MAX, NULL);
+	mock().expectOneCall("kv_append_point__get_append_point").andReturnValue(UINT32_MAX);
 
 	CHECK_EQUAL(-ENOSPC, kv_set(store, &k, &v1.value));
 }
