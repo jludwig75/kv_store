@@ -3,3 +3,4 @@
 *.a
 kv_harness
 kv_stress
+.vscode/
