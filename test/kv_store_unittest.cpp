@@ -145,15 +145,36 @@ protected:
         char *test_file_name = "test_file_name";
         char *argv[] = { "dummy", test_file_name };
         
+        _block_array_ptr = (struct kv_block_array *)0x345346;
         _block_allocator_ptr = (struct kv_block_allocator *)0x24534543;
+        _directory_ptr = (struct kv_directory *)0x534567;
         _append_point_ptr = (struct kv_append_point *)0x42356;
         EXPECT_GLOBAL_CALL(kv_block_allocator__init, kv_block_allocator__init(testing::_, testing::_)).WillOnce([this](struct kv_block_allocator **block_allocator, uint32_t number_of_blocks) { *block_allocator = _block_allocator_ptr; return 0; });
-        EXPECT_GLOBAL_CALL(kv_block_array__init, kv_block_array__init(testing::_, testing::_)).WillOnce(testing::Return(0));
-        EXPECT_GLOBAL_CALL(kv_directory__init, kv_directory__init(testing::_)).WillOnce(testing::Return(0));
+        EXPECT_GLOBAL_CALL(kv_block_array__init, kv_block_array__init(testing::_, testing::_)).WillOnce([this](struct kv_block_array **block_array, size_t raw_block_bytes){ *block_array = _block_array_ptr; return 0; });
+        EXPECT_GLOBAL_CALL(kv_directory__init, kv_directory__init(testing::_)).WillOnce([this](struct kv_directory **directory) { *directory = _directory_ptr; return 0; } );
         EXPECT_GLOBAL_CALL(kv_append_point__init, kv_append_point__init(testing::_, testing::_)).WillOnce([this](struct kv_append_point **append_point, struct kv_block_allocator *block_allocator){ *append_point = _append_point_ptr; return 0;});
         EXPECT_GLOBAL_CALL(kv_block_array__open, kv_block_array__open(testing::_, test_file_name, true)).WillOnce(testing::Return(0));
 
         ASSERT_EQ(0, kv_open(&store, true, 2, argv));
+
+    }
+    void testSetUp()
+    {
+		// Setup mocks to default behavior for all tests:
+		ON_GLOBAL_CALL(kv_block__init, kv_block__init(testing::_, testing::_, testing::_, testing::_, testing::_)).
+							WillByDefault([](struct kv_block *bv_block, uint64_t key_id, uint32_t data_bytes, const char *value_data, uint64_t sequence){});
+		ON_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).
+							WillByDefault(testing::Return(17));
+		ON_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(_block_array_ptr, testing::_, testing::_)).
+							WillByDefault(testing::Return(0));
+		ON_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).
+							WillByDefault([](struct kv_directory *directory, uint64_t key, uint32_t block, size_t bytes, uint64_t sequence, bool *set_as_current_key_entry, uint32_t *replaced_block)
+											{
+												*set_as_current_key_entry = true;
+												*replaced_block = UINT32_MAX;
+												return 0;
+											});
+		ON_GLOBAL_CALL(kv_block_allocator__mark_block_as_allocated, kv_block_allocator__mark_block_as_allocated(testing::_, testing::_)).WillByDefault([](struct kv_block_allocator *block_allocator, uint32_t block){});
     }
     virtual void TearDown()
     {
@@ -164,22 +185,117 @@ protected:
         kv_close(store);
     }
     struct kvstor *store;
+    struct kv_block_array *_block_array_ptr;
     struct kv_block_allocator *_block_allocator_ptr;
+    struct kv_directory *_directory_ptr;
     struct kv_append_point *_append_point_ptr;
 };
 
-TEST_F(kv_set_Test, initializes_kv_block)
+TEST_F(kv_set_Test, initializes_kv_block_with_correct_data)
 {
+    testSetUp();
+
     struct test_value v1;
     v1.size = 4;
 
     struct key k;
     k.id = 97;
 
-    EXPECT_GLOBAL_CALL(kv_block__init, kv_block__init(testing::_, k.id, v1.value.size, v1.value.data, 1));
+    const uint64_t exepected_sequence_number = 1;
+    EXPECT_GLOBAL_CALL(kv_block__init, kv_block__init(testing::_, k.id, v1.value.size, v1.value.data, exepected_sequence_number));
 
-    // Fail to allocate a block to exit kv_set here.
+    kv_set(store, &k, &v1.value);
+}
+
+TEST_F(kv_set_Test, returns_error_when_append_point_cannot_be_allocated)
+{
+    testSetUp();
+
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
     EXPECT_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).WillOnce(testing::Return(UINT32_MAX));
 
     ASSERT_EQ(-ENOSPC, kv_set(store, &k, &v1.value));
+}
+
+TEST_F(kv_set_Test, writes_kv_block_to_allocated_file_block)
+{
+    testSetUp();
+
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    const uint32_t allocated_block = 17;
+    EXPECT_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).WillOnce(testing::Return(allocated_block));
+
+    // Return error here to exit kv_set at this point.
+    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(testing::_, allocated_block, testing::_)).WillOnce(testing::Return(0));
+
+    kv_set(store, &k, &v1.value);
+}
+
+TEST_F(kv_set_Test, returns_error_when_block_write_failes)
+{
+    testSetUp();
+
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    // Return error here to exit kv_set at this point.
+    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(testing::_, testing::_, testing::_)).WillOnce(testing::Return(-EIO));
+
+    ASSERT_EQ(-EIO, kv_set(store, &k, &v1.value));
+}
+
+TEST_F(kv_set_Test, stores_written_block_to_directroy)
+{
+    testSetUp();
+
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    const uint64_t exepected_sequence_number = 1;
+
+    const uint32_t allocated_block = 97;
+    EXPECT_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).WillOnce(testing::Return(allocated_block));
+
+    // Return error here to exit kv_set at this point.
+    EXPECT_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, k.id, allocated_block, v1.value.size, exepected_sequence_number, testing::_, testing::_)).
+						WillOnce([](struct kv_directory *directory, uint64_t key, uint32_t block, size_t bytes, uint64_t sequence, bool *set_as_current_key_entry, uint32_t *replaced_block)
+									{
+										*set_as_current_key_entry = true;
+										*replaced_block = UINT32_MAX;
+										return 0;
+									});
+
+    kv_set(store, &k, &v1.value);
+}
+
+TEST_F(kv_set_Test, returns_error_on_failure_to_write_block_to_directroy)
+{
+    testSetUp();
+
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    // Return error here to exit kv_set at this point.
+    EXPECT_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).WillOnce(testing::Return(-ENOMEM));
+
+    ASSERT_EQ(-ENOMEM, kv_set(store, &k, &v1.value));
 }

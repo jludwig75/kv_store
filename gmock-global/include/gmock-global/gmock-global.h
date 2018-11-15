@@ -908,3 +908,9 @@ private:
 GlobalMockDeleter<GLOBAL_MOCK_TYPE(name)> GLOBAL_MOCK_DELETER_NAME(mock_deleter)(GLOBAL_MOCK_INSTANCE(name));\
 if (!GLOBAL_MOCK_INSTANCE(name) || 0 != strcmp(GLOBAL_MOCK_INSTANCE(name)->m_tag, __FUNCTION__)) GLOBAL_MOCK_INSTANCE(name).reset(new GLOBAL_MOCK_TYPE(name)(__FUNCTION__));\
 EXPECT_CALL(*GLOBAL_MOCK_INSTANCE(name), method)
+
+
+#define ON_GLOBAL_CALL(name, method) \
+testing::Mock::AllowLeak(&GLOBAL_MOCK_INSTANCE(name)); \
+if (!GLOBAL_MOCK_INSTANCE(name) || 0 != strcmp(GLOBAL_MOCK_INSTANCE(name)->m_tag, __FUNCTION__)) GLOBAL_MOCK_INSTANCE(name).reset(new GLOBAL_MOCK_TYPE(name)(__FUNCTION__));\
+ON_CALL(*GLOBAL_MOCK_INSTANCE(name), method)
