@@ -171,20 +171,8 @@ protected:
     void testSetUp()
     {
 		// Setup mocks to default behavior for all tests:
-		ON_GLOBAL_CALL(kv_block__init, kv_block__init(testing::_, testing::_, testing::_, testing::_, testing::_)).
-							WillByDefault([](struct kv_block *bv_block, uint64_t key_id, uint32_t data_bytes, const char *value_data, uint64_t sequence){});
-		ON_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).
-							WillByDefault(testing::Return(17));
-		ON_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(_block_array_ptr, testing::_, testing::_)).
-							WillByDefault(testing::Return(0));
-		ON_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).
-							WillByDefault([](struct kv_directory *directory, uint64_t key, uint32_t block, size_t bytes, uint64_t sequence, bool *set_as_current_key_entry, uint32_t *replaced_block)
-											{
-												*set_as_current_key_entry = true;
-												*replaced_block = UINT32_MAX;
-												return 0;
-											});
-		ON_GLOBAL_CALL(kv_block_allocator__mark_block_as_allocated, kv_block_allocator__mark_block_as_allocated(testing::_, testing::_)).WillByDefault([](struct kv_block_allocator *block_allocator, uint32_t block){});
+        ON_GLOBAL_CALL(kv_write_key_block, kv_write_key_block(store, testing::_, testing::_, testing::_)).
+                        WillByDefault(testing::Return(0));
     }
 };
 
@@ -462,4 +450,91 @@ TEST_F(kv_get_Test, returns_EFAULT_if_block_fails_to_validate)
                     WillOnce(testing::Return(false));
 
     ASSERT_EQ(-EFAULT, kv_get(store, &k, &v1.value));
+}
+
+class kv_del_Test : public kv_op_Test
+{
+protected:
+    void testSetUp()
+    {
+		// Setup mocks to default behavior for all tests:
+        ON_GLOBAL_CALL(kv_directory__lookup_key, kv_directory__lookup_key(_directory_ptr, testing::_, testing::_, testing::_)).
+                        WillByDefault([](struct kv_directory *directory, uint64_t key, uint32_t *block, size_t *bytes)
+                                        {
+                                            *block = 77;
+                                            *bytes = 89;
+                                            return 0;
+                                        });
+        ON_GLOBAL_CALL(kv_write_key_block, kv_write_key_block(store, testing::_, testing::_, testing::_)).
+                        WillByDefault(testing::Return(0));
+    }
+};
+
+TEST_F(kv_del_Test, calls_kv_directory_lookup_key)
+{
+    struct key k;
+    k.id = 917;
+
+    EXPECT_GLOBAL_CALL(kv_directory__lookup_key, kv_directory__lookup_key(_directory_ptr, testing::_, testing::_, testing::_)).
+                    WillOnce([](struct kv_directory *directory, uint64_t key, uint32_t *block, size_t *bytes)
+                                    {
+                                        *block = 77;
+                                        *bytes = 89;
+                                        return 0;
+                                    });
+
+    kv_del(store, &k);
+}
+
+TEST_F(kv_del_Test, fails_if_kv_directory_lookup_key_fails)
+{
+    struct key k;
+    k.id = 917;
+
+    EXPECT_GLOBAL_CALL(kv_directory__lookup_key, kv_directory__lookup_key(_directory_ptr, testing::_, testing::_, testing::_)).
+                    WillOnce(testing::Return(-EFAULT));
+
+    ASSERT_EQ(-EFAULT, kv_del(store, &k));
+}
+
+// 0 bytes is a delete entry. We must fail, because the entry does not actually exist;
+// it has already been deleted. (The last operation on that key was to delete it from the store)
+TEST_F(kv_del_Test, returns_ENOENT_if_kv_directory_lookup_key_finds_value_of_0_byte_size)
+{
+    struct key k;
+    k.id = 917;
+
+    EXPECT_GLOBAL_CALL(kv_directory__lookup_key, kv_directory__lookup_key(_directory_ptr, testing::_, testing::_, testing::_)).
+                    WillOnce([](struct kv_directory *directory, uint64_t key, uint32_t *block, size_t *bytes)
+                                    {
+                                        *block = 77;
+                                        *bytes = 0;
+                                        return 0;
+                                    });
+
+    ASSERT_EQ(-ENOENT, kv_del(store, &k));
+}
+
+TEST_F(kv_del_Test, calls_kv_write_key_block)
+{
+    struct key k;
+    k.id = 917;
+
+    EXPECT_GLOBAL_CALL(kv_write_key_block, kv_write_key_block(store, testing::_, testing::_, testing::_)).
+                    WillOnce(testing::Return(0));
+
+    // kv_write_key_block is the last call that can fail in kv_del.
+    // If kv_write_key_block returns 0, kv_del should as well.
+    ASSERT_EQ(0, kv_del(store, &k));
+}
+
+TEST_F(kv_del_Test, fails_if_kv_write_key_block_fails)
+{
+    struct key k;
+    k.id = 917;
+
+    EXPECT_GLOBAL_CALL(kv_write_key_block, kv_write_key_block(store, testing::_, testing::_, testing::_)).
+                    WillOnce(testing::Return(-ENOMEM));
+
+    ASSERT_EQ(-ENOMEM, kv_del(store, &k));
 }
