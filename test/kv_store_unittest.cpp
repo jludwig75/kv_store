@@ -137,7 +137,7 @@ TEST(kv_open_Test, scans_the_log_for_existing_store)
 }
 
 
-class kv_set_Test : public testing::Test, public GlobalMockTestFixture
+class kv_set_Test : public GlobalMockTest
 {
 protected:
     virtual void SetUp()

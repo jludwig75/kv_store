@@ -31,10 +31,10 @@ private:
     std::unique_ptr<T>& m_mockReference;
 };
 
-class GlobalMockTestFixture
+class GlobalMockTest : public testing::Test
 {
 public:
-    GlobalMockTestFixture() : m_gloabl_function_mock_deleters()
+    GlobalMockTest() : m_gloabl_function_mock_deleters()
     {
 
     }
