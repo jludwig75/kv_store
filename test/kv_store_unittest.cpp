@@ -136,7 +136,6 @@ TEST(kv_open_Test, scans_the_log_for_existing_store)
     kv_close(store);
 }
 
-
 class kv_set_Test : public GlobalMockTest
 {
 protected:
@@ -216,6 +215,9 @@ TEST_F(kv_set_Test, returns_error_when_append_point_cannot_be_allocated)
 
     EXPECT_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).WillOnce(testing::Return(UINT32_MAX));
 
+	// We should not attempt to write a block if we could not allocate one.
+    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(_block_array_ptr, testing::_, testing::_)).Times(0);
+
     ASSERT_EQ(-ENOSPC, kv_set(store, &k, &v1.value));
 }
 
@@ -231,7 +233,7 @@ TEST_F(kv_set_Test, writes_kv_block_to_allocated_file_block)
     EXPECT_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).WillOnce(testing::Return(allocated_block));
 
     // Return error here to exit kv_set at this point.
-    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(testing::_, allocated_block, testing::_)).WillOnce(testing::Return(0));
+    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(_block_array_ptr, allocated_block, testing::_)).WillOnce(testing::Return(0));
 
     kv_set(store, &k, &v1.value);
 }
@@ -245,7 +247,10 @@ TEST_F(kv_set_Test, returns_error_when_block_write_failes)
     k.id = 97;
 
     // Return error here to exit kv_set at this point.
-    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(testing::_, testing::_, testing::_)).WillOnce(testing::Return(-EIO));
+    EXPECT_GLOBAL_CALL(kv_block_array__write_block, kv_block_array__write_block(_block_array_ptr, testing::_, testing::_)).WillOnce(testing::Return(-EIO));
+
+	// We should not write a directory entry if we fail to write a block.
+    EXPECT_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).Times(0);
 
     ASSERT_EQ(-EIO, kv_set(store, &k, &v1.value));
 }
@@ -287,4 +292,69 @@ TEST_F(kv_set_Test, returns_error_on_failure_to_write_block_to_directroy)
     EXPECT_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).WillOnce(testing::Return(-ENOMEM));
 
     ASSERT_EQ(-ENOMEM, kv_set(store, &k, &v1.value));
+}
+
+TEST_F(kv_set_Test, marks_new_block_allocated)
+{
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    const uint32_t allocated_block = 97;
+    EXPECT_GLOBAL_CALL(kv_append_point__get_append_point, kv_append_point__get_append_point(_append_point_ptr)).WillOnce(testing::Return(allocated_block));
+
+	EXPECT_GLOBAL_CALL(kv_block_allocator__mark_block_as_allocated, kv_block_allocator__mark_block_as_allocated(_block_allocator_ptr, allocated_block));
+
+    kv_set(store, &k, &v1.value);
+}
+
+TEST_F(kv_set_Test, marks_replaced_block_as_free_if_there_was_one)
+{
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    const uint32_t previous_block = 97;
+    EXPECT_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).
+						WillOnce([](struct kv_directory *directory, uint64_t key, uint32_t block, size_t bytes, uint64_t sequence, bool *set_as_current_key_entry, uint32_t *replaced_block)
+									{
+										*set_as_current_key_entry = true;
+										*replaced_block = previous_block;
+										return 0;
+									});
+
+	EXPECT_GLOBAL_CALL(kv_block_allocator__free_block, kv_block_allocator__free_block(_block_allocator_ptr, previous_block));
+
+    // kv_directory__store_key is the last call that can fail in kv_set.
+	// If if succeeds, kv_set will return 0.
+	ASSERT_EQ(0, kv_set(store, &k, &v1.value));
+}
+
+TEST_F(kv_set_Test, does_not_mark_replaced_block_as_free_if_there_was_not_one)
+{
+    struct test_value v1;
+    v1.size = 4;
+
+    struct key k;
+    k.id = 97;
+
+    EXPECT_GLOBAL_CALL(kv_directory__store_key, kv_directory__store_key(_directory_ptr, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_)).
+						WillOnce([](struct kv_directory *directory, uint64_t key, uint32_t block, size_t bytes, uint64_t sequence, bool *set_as_current_key_entry, uint32_t *replaced_block)
+									{
+										*set_as_current_key_entry = true;
+										*replaced_block = UINT32_MAX;	// There was no replaced block.
+										return 0;
+									});
+
+	// Should not be called.
+	EXPECT_GLOBAL_CALL(kv_block_allocator__free_block, kv_block_allocator__free_block(_block_allocator_ptr, testing::_)).
+						Times(0);	// i.e. never
+
+    // kv_directory__store_key is the last call that can fail in kv_set.
+	// If if succeeds, kv_set will return 0.
+	ASSERT_EQ(0, kv_set(store, &k, &v1.value));
 }
