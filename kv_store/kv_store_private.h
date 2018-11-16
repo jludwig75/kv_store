@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kv_store.h"
 #include "kv_block_allocator.h"
 #include "kv_block_array.h"
 #include "kv_directory.h"

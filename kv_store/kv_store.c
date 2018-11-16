@@ -10,6 +10,7 @@
 
 #include "kv_store_private.h"
 #include "kv_store_replay.h"
+#include "kv_store_write_block.h"
 
 #include <assert.h>
 #include <string.h>
@@ -144,40 +145,7 @@ int kv_set(struct kvstor *store, const struct key *k, const struct value *v)
         return -EINVAL;
     }
 
-    uint64_t my_sequence = ++store->current_sequence_number;
-    /// @todo Allocate on heap rather than stack
-    struct kv_block block_data;
-    kv_block__init(&block_data, k->id, (uint32_t)v->size, v->data, my_sequence);
-
-    uint32_t destination_block = kv_append_point__get_append_point(store->append_point);
-    if (destination_block == UINT32_MAX)
-    {
-        return -ENOSPC;
-    }
-
-    int ret = kv_block_array__write_block(store->block_array, destination_block, (const uint8_t *)&block_data);
-    if (ret != 0)
-    {
-        return ret;
-    }
-
-    bool set_as_latest_entry_for_key;
-    uint32_t replaced_block;
-    ret = kv_directory__store_key(store->directory, k->id, destination_block, v->size, my_sequence, &set_as_latest_entry_for_key, &replaced_block);
-    if (ret != 0)
-    {
-        return ret;
-    }
-
-    if (replaced_block != UINT32_MAX)
-    {
-        kv_block_allocator__free_block(store->block_allocator, replaced_block);
-    }
-
-    assert(set_as_latest_entry_for_key);
-    kv_block_allocator__mark_block_as_allocated(store->block_allocator, destination_block);
-
-    return 0;
+    return kv_write_key_block(store, k, v->size, v->data);
 }
 
 int kv_del(struct kvstor *store, const struct key *k)
@@ -195,39 +163,5 @@ int kv_del(struct kvstor *store, const struct key *k)
         return -ENOENT;
     }
 
-    uint64_t my_sequence = ++store->current_sequence_number;
-
-    /// @todo Allocate on heap rather than stack
-    struct kv_block block_data;
-    kv_block__init(&block_data, k->id, 0, NULL, my_sequence);
-
-    uint32_t destination_block = kv_append_point__get_append_point(store->append_point);
-    if (destination_block == UINT32_MAX)
-    {
-        return -ENOSPC;
-    }
-
-    ret = kv_block_array__write_block(store->block_array, destination_block, (const uint8_t *)&block_data);
-    if (ret != 0)
-    {
-        return ret;
-    }
-
-    bool set_as_latest_entry_for_key;
-    uint32_t replaced_block;
-    ret = kv_directory__store_key(store->directory, k->id, destination_block, 0, my_sequence, &set_as_latest_entry_for_key, &replaced_block);
-    if (ret != 0)
-    {
-        return ret;
-    }
-
-    if (replaced_block != UINT32_MAX)
-    {
-        kv_block_allocator__free_block(store->block_allocator, replaced_block);
-    }
-
-    assert(set_as_latest_entry_for_key);
-    kv_block_allocator__mark_block_as_allocated(store->block_allocator, destination_block);
-
-    return 0;
+    return kv_write_key_block(store, k, 0, NULL);
 }
