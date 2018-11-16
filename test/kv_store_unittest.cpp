@@ -137,7 +137,7 @@ TEST(kv_open_Test, scans_the_log_for_existing_store)
 }
 
 
-class kv_set_Test : public testing::Test
+class kv_set_Test : public testing::Test, public GlobalMockTestFixture
 {
 protected:
     virtual void SetUp()
@@ -157,6 +157,7 @@ protected:
 
         ASSERT_EQ(0, kv_open(&store, true, 2, argv));
 
+	    testSetUp();
     }
     void testSetUp()
     {
@@ -193,8 +194,6 @@ protected:
 
 TEST_F(kv_set_Test, initializes_kv_block_with_correct_data)
 {
-    testSetUp();
-
     struct test_value v1;
     v1.size = 4;
 
@@ -209,8 +208,6 @@ TEST_F(kv_set_Test, initializes_kv_block_with_correct_data)
 
 TEST_F(kv_set_Test, returns_error_when_append_point_cannot_be_allocated)
 {
-    testSetUp();
-
     struct test_value v1;
     v1.size = 4;
 
@@ -224,8 +221,6 @@ TEST_F(kv_set_Test, returns_error_when_append_point_cannot_be_allocated)
 
 TEST_F(kv_set_Test, writes_kv_block_to_allocated_file_block)
 {
-    testSetUp();
-
     struct test_value v1;
     v1.size = 4;
 
@@ -243,8 +238,6 @@ TEST_F(kv_set_Test, writes_kv_block_to_allocated_file_block)
 
 TEST_F(kv_set_Test, returns_error_when_block_write_failes)
 {
-    testSetUp();
-
     struct test_value v1;
     v1.size = 4;
 
@@ -259,8 +252,6 @@ TEST_F(kv_set_Test, returns_error_when_block_write_failes)
 
 TEST_F(kv_set_Test, stores_written_block_to_directroy)
 {
-    testSetUp();
-
     struct test_value v1;
     v1.size = 4;
 
@@ -286,8 +277,6 @@ TEST_F(kv_set_Test, stores_written_block_to_directroy)
 
 TEST_F(kv_set_Test, returns_error_on_failure_to_write_block_to_directroy)
 {
-    testSetUp();
-
     struct test_value v1;
     v1.size = 4;
 

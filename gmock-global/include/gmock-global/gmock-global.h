@@ -1,9 +1,51 @@
 #pragma once
 #include <memory>
+#include <vector>
 
 //
 // Mock classes for different argument count definitions
 //
+
+class GlobalMockDeleterBase
+{
+public:
+    ~GlobalMockDeleterBase() {}
+};
+
+//
+// Code for deleting mock objects generated for global function in the end of each test.
+//
+
+template <typename T>
+class GlobalMockDeleter : public GlobalMockDeleterBase
+{
+public:
+    GlobalMockDeleter(std::unique_ptr<T>& ref) : m_mockReference(ref) {}
+
+    ~GlobalMockDeleter()
+    {
+        m_mockReference.reset();
+    }
+
+private:
+    std::unique_ptr<T>& m_mockReference;
+};
+
+class GlobalMockTestFixture
+{
+public:
+    GlobalMockTestFixture() : m_gloabl_function_mock_deleters()
+    {
+
+    }
+    void add_function_mock_deleter(std::shared_ptr<GlobalMockDeleterBase> function_mock_deleter)
+    {
+        m_gloabl_function_mock_deleters.push_back(function_mock_deleter);
+    }
+private:
+    std::vector<std::shared_ptr<GlobalMockDeleterBase> > m_gloabl_function_mock_deleters;
+};
+
 
 //
 // Mock class and macroses for 0 arguments global function
@@ -878,25 +920,6 @@ public:\
 #define MOCK_GLOBAL_FUNC15(m, ...) MOCK_GLOBAL_FUNC15_(, , , m, __VA_ARGS__)
 #define MOCK_GLOBAL_FUNC15_WITH_CALLTYPE(ct, m, ...) MOCK_GLOBAL_FUNC15_(, , ct, m, __VA_ARGS__)
 
-//
-// Code for deleting mock objects generated for global function in the end of each test.
-//
-
-template <typename T>
-class GlobalMockDeleter
-{
-public:
-    GlobalMockDeleter(std::unique_ptr<T>& ref) : m_mockReference(ref) {}
-
-    ~GlobalMockDeleter()
-    {
-        m_mockReference.reset();
-    }
-
-private:
-    std::unique_ptr<T>& m_mockReference;
-};
-
 #define GLOBAL_MOCK_DELETER_NAME3(x, y)     x##y
 #define GLOBAL_MOCK_DELETER_NAME2(x, y)     GLOBAL_MOCK_DELETER_NAME3(x, y)
 #define GLOBAL_MOCK_DELETER_NAME(x)         GLOBAL_MOCK_DELETER_NAME2(x, __COUNTER__)
@@ -911,6 +934,6 @@ EXPECT_CALL(*GLOBAL_MOCK_INSTANCE(name), method)
 
 
 #define ON_GLOBAL_CALL(name, method) \
-testing::Mock::AllowLeak(&GLOBAL_MOCK_INSTANCE(name)); \
+add_function_mock_deleter(std::shared_ptr<GlobalMockDeleterBase>(new GlobalMockDeleter<GLOBAL_MOCK_TYPE(name)>(GLOBAL_MOCK_INSTANCE(name))));\
 if (!GLOBAL_MOCK_INSTANCE(name) || 0 != strcmp(GLOBAL_MOCK_INSTANCE(name)->m_tag, __FUNCTION__)) GLOBAL_MOCK_INSTANCE(name).reset(new GLOBAL_MOCK_TYPE(name)(__FUNCTION__));\
 ON_CALL(*GLOBAL_MOCK_INSTANCE(name), method)
